@@ -13,7 +13,7 @@ DB_CONFIG = {
     'charset': 'utf8mb4'
 }
 
-TARGET_LEVELS = {'4', '5', '6'}
+TARGET_LEVELS = {'2', '4', '5', '6'}
 
 def parse_and_insert(gar_folder):
     conn = mysql.connector.connect(**DB_CONFIG)
@@ -87,18 +87,20 @@ def parse_and_insert(gar_folder):
 
         count = 0
         for objid, obj in tqdm(addr_objects.items(), desc=f"Импорт {region_dir}"):
-            level = obj['LEVEL']
-            if level not in TARGET_LEVELS:
-                continue
             if not obj['NAME'] or not obj['TYPENAME']:
                 continue
 
-            kladr = ''
+            level = obj['LEVEL']
             pre = obj['TYPENAME']
+            if level not in TARGET_LEVELS and not (level == '2' and pre == 'г'):
+                continue
+
+            kladr = ''
             name = obj['NAME']
-            region, sub_region, region_id = build_hierarchy(objid, addr_objects, hierarchy)
             fias = obj['OBJECTGUID'].replace('-', '')
             obj_id = int(obj['OBJECTID'])
+
+            region, sub_region, region_id = build_hierarchy(objid, addr_objects, hierarchy)
 
             if obj_id in params:
                 kladr = params[obj_id]['KLADR'] or ''
@@ -145,13 +147,19 @@ def build_hierarchy(start_objid, addr_objects, hierarchy):
         parent_id = info.get('PARENTOBJID')
         parent = addr_objects.get(parent_id)
         if parent:
+            typename = parent['TYPENAME']
             level = parent['LEVEL']
-            name = f"{parent['TYPENAME']} {parent['NAME']}".strip()
+            name = f"{typename} {parent['NAME']}".strip()
+
             if level == '1':
-                region = name
                 region_id = int(info['REGIONCODE']) if info.get('REGIONCODE', '').isdigit() else None
-            elif level == '2' and not sub_region:
-                sub_region = name
+
+            if typename != 'г':
+                if level == '1':
+                    region = name
+                elif level in {'2', '3'} and not sub_region:
+                    sub_region = name
+
         current_id = parent_id
 
     return region, sub_region, region_id
