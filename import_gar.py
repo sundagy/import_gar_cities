@@ -13,27 +13,23 @@ DB_CONFIG = {
     'charset': 'utf8mb4'
 }
 
-TARGET_LEVELS = {'2', '4', '5', '6'}
-
 def parse_and_insert(gar_folder):
     conn = mysql.connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
     print("Очищаем таблицу cities...")
     cursor.execute("DELETE FROM cities where id > 0")
-    cursor.close()
     conn.commit()
 
     insert_stmt = """
         INSERT INTO cities (
-            id, fias, kladr, pre, name, sub_region, region, country, region_id, `long`, `lat`, cdek, boxberry
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            id, fias, kladr, pre, name, sub_region, region, country, region_id, level, `long`, `lat`, cdek, boxberry
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
 
     addr_objects = {}
     hierarchy = {}
     params = {}
 
-    cursor = conn.cursor()
     print("📥 Чтение и импорт по регионам...")
     for region_dir in sorted(os.listdir(gar_folder)):
         region_path = os.path.join(gar_folder, region_dir)
@@ -70,7 +66,7 @@ def parse_and_insert(gar_folder):
                                 'OBJECTID': elem.attrib['OBJECTID'],
                                 'OBJECTGUID': elem.attrib['OBJECTGUID'],
                                 'NAME': elem.attrib.get('NAME', ''),
-                                'TYPENAME': elem.attrib.get('TYPENAME', ''),
+                                'TYPENAME': prepare_typename(elem.attrib.get('TYPENAME', '')),
                                 'LEVEL': elem.attrib.get('LEVEL', '')
                             }
                     elem.clear()
@@ -80,35 +76,35 @@ def parse_and_insert(gar_folder):
                     if elem.tag == 'ITEM' and elem.attrib.get('ISACTIVE') == '1':
                         object_id = elem.attrib['OBJECTID']
                         hierarchy[object_id] = {
-                            'PARENTOBJID': elem.attrib.get('PARENTOBJID'),
-                            'REGIONCODE': elem.attrib.get('REGIONCODE')
+                            'PARENTOBJID': elem.attrib.get('PARENTOBJID')
                         }
                     elem.clear()
 
+        batch = []
         count = 0
+        left = 0
         for objid, obj in tqdm(addr_objects.items(), desc=f"Импорт {region_dir}"):
             if not obj['NAME'] or not obj['TYPENAME']:
                 continue
 
-            level = obj['LEVEL']
+            level = int(obj['LEVEL'])
             pre = obj['TYPENAME']
-            if level not in TARGET_LEVELS and not (level == '2' and pre == 'г'):
+            if level not in {1, 2, 4, 5, 6} or (level == 2 and pre != 'г') or (level == 1 and pre != 'г'):
                 continue
 
-            kladr = ''
             name = obj['NAME']
             fias = obj['OBJECTGUID'].replace('-', '')
             obj_id = int(obj['OBJECTID'])
+            kladr = (params[obj_id]['KLADR'] or '') if obj_id in params else ''
+            region_id = int(region_dir)
 
-            region, sub_region, region_id = build_hierarchy(objid, addr_objects, hierarchy)
+            region, sub_region, is_found = build_hierarchy(objid, addr_objects, hierarchy)
 
-            if obj_id in params:
-                kladr = params[obj_id]['KLADR'] or ''
-
-            if region_id is None:
+            if not is_found:
+                left += 1
                 continue
 
-            cursor.execute(insert_stmt, (
+            batch.append((
                 obj_id,
                 fias,
                 kladr,
@@ -118,6 +114,7 @@ def parse_and_insert(gar_folder):
                 region,
                 'RU',
                 region_id,
+                level,
                 0,
                 0,
                 0,
@@ -125,35 +122,45 @@ def parse_and_insert(gar_folder):
             ))
             count += 1
 
-        conn.commit()
-        print(f"✅ Регион {region_dir}: импортировано {count} записей")
+        if batch:
+            cursor.executemany(insert_stmt, batch)
+            conn.commit()
+
+        print(f"✅ Регион {region_dir}: импортировано {count} записей, left {left}")
 
     cursor.close()
     conn.close()
     print("🎉 Импорт завершён.")
 
+
+def prepare_typename(otype: str) -> str:
+    if otype.count('.') == 1:
+        otype = otype.strip('.')
+    return otype
+
+
 def build_hierarchy(start_objid, addr_objects, hierarchy):
     visited = set()
     region = ""
     sub_region = ""
-    region_id = None
     current_id = start_objid
+    is_found = False
 
     while current_id and current_id not in visited:
         visited.add(current_id)
+
         info = hierarchy.get(current_id)
         if not info:
             break
+
+        is_found = True
+
         parent_id = info.get('PARENTOBJID')
         parent = addr_objects.get(parent_id)
         if parent:
             typename = parent['TYPENAME']
             level = parent['LEVEL']
             name = f"{typename} {parent['NAME']}".strip()
-
-            if level == '1':
-                region_id = int(info['REGIONCODE']) if info.get('REGIONCODE', '').isdigit() else None
-
             if typename != 'г':
                 if level == '1':
                     region = name
@@ -162,7 +169,8 @@ def build_hierarchy(start_objid, addr_objects, hierarchy):
 
         current_id = parent_id
 
-    return region, sub_region, region_id
+    return region, sub_region, is_found
+
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
