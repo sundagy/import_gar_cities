@@ -17,7 +17,7 @@ def parse_and_insert(gar_folder):
     conn = mysql.connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
     print("Очищаем таблицу cities...")
-    cursor.execute("DELETE FROM cities where id > 0")
+    cursor.execute("DELETE FROM cities where country = 'RU' and id > 0")
     conn.commit()
 
     insert_stmt = """
@@ -28,6 +28,7 @@ def parse_and_insert(gar_folder):
 
     addr_objects = {}
     hierarchy = {}
+    hierarchy_mun = {}
     params = {}
 
     print("📥 Чтение и импорт по регионам...")
@@ -38,6 +39,7 @@ def parse_and_insert(gar_folder):
 
         addr_objects.clear()
         hierarchy.clear()
+        hierarchy_mun.clear()
         params.clear()
 
         for file in os.listdir(region_path):
@@ -80,6 +82,15 @@ def parse_and_insert(gar_folder):
                         }
                     elem.clear()
 
+            elif file.startswith("AS_MUN_HIERARCHY_") and file.endswith(".XML"):
+                for event, elem in ET.iterparse(path, events=("end",)):
+                    if elem.tag == 'ITEM' and elem.attrib.get('ISACTIVE') == '1':
+                        object_id = elem.attrib['OBJECTID']
+                        hierarchy_mun[object_id] = {
+                            'PARENTOBJID': elem.attrib.get('PARENTOBJID')
+                        }
+                    elem.clear()
+
         batch = []
         count = 0
         left = 0
@@ -89,7 +100,10 @@ def parse_and_insert(gar_folder):
 
             level = int(obj['LEVEL'])
             pre = obj['TYPENAME']
-            if level not in {1, 2, 4, 5, 6} or (level == 2 and pre != 'г') or (level == 1 and pre != 'г'):
+
+            if (level not in {1, 2, 3, 4, 5, 6}
+                    or (level in {1, 2} and pre not in {'г', 'г.ф.з.', 'п', 'пос'})
+                    or (pre in {'р-н', 'АО', 'г.о.', 'м.о.', 'м.р-н', 'ф.т.'})):
                 continue
 
             name = obj['NAME']
@@ -99,6 +113,9 @@ def parse_and_insert(gar_folder):
             region_id = int(region_dir)
 
             region, sub_region, is_found = build_hierarchy(objid, addr_objects, hierarchy)
+
+            if not is_found:
+                region, sub_region, is_found = build_hierarchy(objid, addr_objects, hierarchy_mun)
 
             if not is_found:
                 left += 1
@@ -160,7 +177,7 @@ def build_hierarchy(start_objid, addr_objects, hierarchy):
         if parent:
             typename = parent['TYPENAME']
             level = parent['LEVEL']
-            name = f"{typename} {parent['NAME']}".strip()
+            name = f"{typename} {parent['NAME']}".strip(' -')
             if typename != 'г':
                 if level == '1':
                     region = name

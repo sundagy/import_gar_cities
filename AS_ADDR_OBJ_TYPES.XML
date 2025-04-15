@@ -29,6 +29,7 @@
                        STARTDATE="1900-01-01" ENDDATE="2015-11-05" ISACTIVE="false"/>
     <ADDRESSOBJECTTYPE ID="15" LEVEL="1" NAME="Чувашия" SHORTNAME="Чувашия" DESC="Чувашия" UPDATEDATE="2025-04-05"
                        STARTDATE="1900-01-01" ENDDATE="2015-11-05" ISACTIVE="false"/>
+
     <ADDRESSOBJECTTYPE ID="17" LEVEL="2" NAME="Автономный округ" SHORTNAME="АО" DESC="Автономный округ"
                        UPDATEDATE="2025-04-05" STARTDATE="1900-01-01" ENDDATE="2015-11-05" ISACTIVE="false"/>
     <ADDRESSOBJECTTYPE ID="429" LEVEL="2" NAME="Город" SHORTNAME="г." DESC="Город" UPDATEDATE="2022-10-14"
@@ -47,6 +48,8 @@
                        STARTDATE="1900-01-01" ENDDATE="2015-11-05" ISACTIVE="false"/>
     <ADDRESSOBJECTTYPE ID="26" LEVEL="2" NAME="Улус" SHORTNAME="у." DESC="Улус" UPDATEDATE="2025-04-05"
                        STARTDATE="2015-11-05" ENDDATE="2079-06-06" ISACTIVE="true"/>
+
+
     <ADDRESSOBJECTTYPE ID="417" LEVEL="3"
                        NAME="внутригородская территория (внутригородское муниципальное образование) города федерального значения"
                        SHORTNAME="вн.тер.г."
@@ -60,6 +63,8 @@
                        UPDATEDATE="2015-11-05" STARTDATE="2015-11-05" ENDDATE="2079-06-06" ISACTIVE="true"/>
     <ADDRESSOBJECTTYPE ID="427" LEVEL="3" NAME="Федеральная территория" SHORTNAME="ф.т." DESC="Федеральная территория"
                        UPDATEDATE="2021-12-10" STARTDATE="2021-12-10" ENDDATE="2079-06-06" ISACTIVE="true"/>
+
+
     <ADDRESSOBJECTTYPE ID="420" LEVEL="4" NAME="внутригородской район" SHORTNAME="вн.р-н" DESC="внутригородской район"
                        UPDATEDATE="2015-11-05" STARTDATE="2015-11-05" ENDDATE="2079-06-06" ISACTIVE="true"/>
     <ADDRESSOBJECTTYPE ID="419" LEVEL="4" NAME="городское поселение" SHORTNAME="г.п." DESC="городское поселение"
@@ -69,6 +74,7 @@
                        ISACTIVE="true"/>
     <ADDRESSOBJECTTYPE ID="418" LEVEL="4" NAME="сельское поселение" SHORTNAME="с.п." DESC="сельское поселение"
                        UPDATEDATE="2015-11-05" STARTDATE="2015-11-05" ENDDATE="2079-06-06" ISACTIVE="true"/>
+
     <ADDRESSOBJECTTYPE ID="27" LEVEL="5" NAME="Волость" SHORTNAME="волость" DESC="Волость" UPDATEDATE="2025-04-05"
                        STARTDATE="1900-01-01" ENDDATE="2015-11-05" ISACTIVE="false"/>
     <ADDRESSOBJECTTYPE ID="28" LEVEL="5" NAME="Город" SHORTNAME="г" DESC="Город" UPDATEDATE="2025-04-05"
@@ -116,6 +122,7 @@
                        STARTDATE="1900-01-01" ENDDATE="2015-11-05" ISACTIVE="false"/>
     <ADDRESSOBJECTTYPE ID="454" LEVEL="5" NAME="Территория" SHORTNAME="тер." DESC="Территория" UPDATEDATE="2025-04-09"
                        STARTDATE="2025-04-05" ENDDATE="2025-04-05" ISACTIVE="false"/>
+
     <ADDRESSOBJECTTYPE ID="46" LEVEL="6" NAME="Аал" SHORTNAME="аал" DESC="Аал" UPDATEDATE="1900-01-01"
                        STARTDATE="1900-01-01" ENDDATE="2079-06-06" ISACTIVE="true"/>
     <ADDRESSOBJECTTYPE ID="47" LEVEL="6" NAME="Автодорога" SHORTNAME="автодорога" DESC="Автодорога"
