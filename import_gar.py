@@ -41,12 +41,12 @@ def parse_and_insert(gar_folder):
 
     insert_stmt = """
         INSERT INTO cities (
-            id, fias, kladr, pre, name, sub_region, region, country, region_id, level, `long`, `lat`, postal
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            id, fias, kladr, pre, name, adm_district, mun_district, region, country, region_id, level, `long`, `lat`, postal
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
 
     addr_objects = {}
-    hierarchy = {}
+    hierarchy_adm = {}
     hierarchy_mun = {}
     params = {}
     house_postindex = {}
@@ -58,7 +58,7 @@ def parse_and_insert(gar_folder):
             continue
 
         addr_objects.clear()
-        hierarchy.clear()
+        hierarchy_adm.clear()
         hierarchy_mun.clear()
         params.clear()
         house_postindex.clear()
@@ -111,7 +111,7 @@ def parse_and_insert(gar_folder):
                         if 'PARENTOBJID' in elem.attrib:
                             object_id = int(elem.attrib['OBJECTID'])
                             parent_id = int(elem.attrib.get('PARENTOBJID'))
-                            hierarchy[object_id] = {'PARENTOBJID': parent_id}
+                            hierarchy_adm[object_id] = {'PARENTOBJID': parent_id}
 
                             if parent_id not in tree:
                                 tree[parent_id] = []
@@ -146,16 +146,19 @@ def parse_and_insert(gar_folder):
             kladr = (params[obj_id]['KLADR'] or '') if obj_id in params else ''
             region_id = int(region_dir)
 
-            region, sub_region, is_found = build_hierarchy(objid, addr_objects, hierarchy)
+            region1, adm_district, is_adm = build_hierarchy(objid, addr_objects, hierarchy_adm)
+            region2, mun_district, is_mun = build_hierarchy(objid, addr_objects, hierarchy_mun)
 
-            if not is_found:
-                region, sub_region, is_found = build_hierarchy(objid, addr_objects, hierarchy_mun)
-
-            if not is_found:
+            if not is_adm and not is_mun:
                 left += 1
                 continue
 
             post_index = find_postal(objid, addr_objects, house_postindex, tree)
+
+            region = region1 if region1 != '' else region2
+
+            if level == 1:
+                region = ''
 
             batch.append((
                 obj_id,
@@ -163,7 +166,8 @@ def parse_and_insert(gar_folder):
                 kladr,
                 pre,
                 name,
-                sub_region,
+                adm_district,
+                mun_district,
                 region,
                 'RU',
                 region_id,
@@ -237,12 +241,16 @@ def build_hierarchy(start_objid, addr_objects, hierarchy):
         if parent:
             typename = parent['TYPENAME']
             level = parent['LEVEL']
-            name = f"{typename} {parent['NAME']}".strip(' -')
-            if typename != 'г':
-                if level == 1:
-                    region = name
-                elif level in {2, 3} and not sub_region:
-                    sub_region = name
+
+            name = f"{typename} {parent['NAME']}"
+            if typename in {'а.обл.', 'обл', 'край', 'округ', 'Чувашия', 'АО', 'р-н', 'Аобл', 'а.окр.', 'м.р-н'}:
+                name = f"{parent['NAME']} {typename}"
+            name = name.strip(' -')
+
+            if level == 1:
+                region = name
+            elif level in {2, 3, 5} and not sub_region:
+                sub_region = name
 
         current_id = parent_id
 
