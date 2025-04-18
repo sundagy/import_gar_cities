@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from collections import deque
 import mysql.connector
 from tqdm import tqdm
 import os
@@ -13,6 +14,24 @@ DB_CONFIG = {
     'charset': 'utf8mb4'
 }
 
+
+def is_city(level: int, type: str) -> bool:
+    valid_levels = {1, 2, 3, 4, 5, 6, 7}
+    valid_types_level_7 = {'мкр', 'ж/р', 'тер'}
+    valid_types_level_1_2 = {'г', 'г.ф.з.', 'п', 'пос'}
+    invalid_types = {'АО', 'г.о.', 'м.о.', 'м.р-н', 'ф.т.', 'с.п.'}
+
+    if level not in valid_levels:
+        return False
+    if level == 7 and type not in valid_types_level_7:
+        return False
+    if level in {1, 2} and type not in valid_types_level_1_2:
+        return False
+    if type in invalid_types:
+        return False
+    return True
+
+
 def parse_and_insert(gar_folder):
     conn = mysql.connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
@@ -22,14 +41,15 @@ def parse_and_insert(gar_folder):
 
     insert_stmt = """
         INSERT INTO cities (
-            id, fias, kladr, pre, name, sub_region, region, country, region_id, level, `long`, `lat`, cdek, boxberry
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            id, fias, kladr, pre, name, sub_region, region, country, region_id, level, `long`, `lat`, postal
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
 
     addr_objects = {}
     hierarchy = {}
     hierarchy_mun = {}
     params = {}
+    house_postindex = {}
 
     print("📥 Чтение и импорт по регионам...")
     for region_dir in sorted(os.listdir(gar_folder)):
@@ -41,54 +61,70 @@ def parse_and_insert(gar_folder):
         hierarchy.clear()
         hierarchy_mun.clear()
         params.clear()
+        house_postindex.clear()
+        tree = {}
 
         for file in os.listdir(region_path):
             path = os.path.join(region_path, file)
 
-            if file.startswith("AS_ADDR_OBJ_PARAMS_") and file.endswith(".XML"):
+            if file.startswith("AS_HOUSES_PARAMS_") and file.endswith(".XML"):
+                for event, elem in ET.iterparse(path, events=("end",)):
+                    if elem.tag == 'PARAM' and elem.attrib.get('TYPEID') == '5':
+                        house_id = int(elem.attrib.get('OBJECTID'))
+                        value = int(elem.attrib.get('VALUE'))
+                        if value:
+                            house_postindex[house_id] = value
+                    elem.clear()
+
+            elif file.startswith("AS_ADDR_OBJ_PARAMS_") and file.endswith(".XML"):
                 for event, elem in ET.iterparse(path, events=("end",)):
                     if elem.tag == 'PARAM':
                         obj_id = int(elem.attrib.get('OBJECTID'))
-                        typeid = elem.attrib.get('TYPEID')
+                        typeid = int(elem.attrib.get('TYPEID'))
                         value = elem.attrib.get('VALUE')
                         if not typeid or not value:
                             continue
                         if obj_id not in params:
-                            params[obj_id] = {'KLADR': None}
-                        if typeid == '10':
-                            params[obj_id]['KLADR'] = value
+                            params[obj_id] = {'KLADR': 0}
+                        if typeid == 10:
+                            params[obj_id]['KLADR'] = int(value)
                     elem.clear()
 
             elif file.startswith("AS_ADDR_OBJ_") and file.endswith(".XML") and "DIVISION" not in file:
                 for event, elem in ET.iterparse(path, events=("end",)):
                     if elem.tag == 'OBJECT':
                         if elem.attrib.get('ISACTIVE') == '1' and elem.attrib.get('ISACTUAL') == '1':
-                            addr_objects[elem.attrib['OBJECTID']] = {
-                                'ID': elem.attrib['ID'],
-                                'OBJECTID': elem.attrib['OBJECTID'],
+                            obj_id = int(elem.attrib['OBJECTID'])
+                            addr_objects[obj_id] = {
+                                'ID': int(elem.attrib['ID']),
+                                'OBJECTID': obj_id,
                                 'OBJECTGUID': elem.attrib['OBJECTGUID'],
                                 'NAME': elem.attrib.get('NAME', ''),
                                 'TYPENAME': prepare_typename(elem.attrib.get('TYPENAME', '')),
-                                'LEVEL': elem.attrib.get('LEVEL', '')
+                                'LEVEL': int(elem.attrib.get('LEVEL', ''))
                             }
                     elem.clear()
 
             elif file.startswith("AS_ADM_HIERARCHY_") and file.endswith(".XML"):
                 for event, elem in ET.iterparse(path, events=("end",)):
                     if elem.tag == 'ITEM' and elem.attrib.get('ISACTIVE') == '1':
-                        object_id = elem.attrib['OBJECTID']
-                        hierarchy[object_id] = {
-                            'PARENTOBJID': elem.attrib.get('PARENTOBJID')
-                        }
+                        if 'PARENTOBJID' in elem.attrib:
+                            object_id = int(elem.attrib['OBJECTID'])
+                            parent_id = int(elem.attrib.get('PARENTOBJID'))
+                            hierarchy[object_id] = {'PARENTOBJID': parent_id}
+
+                            if parent_id not in tree:
+                                tree[parent_id] = []
+                            tree[parent_id].append(object_id)
                     elem.clear()
 
             elif file.startswith("AS_MUN_HIERARCHY_") and file.endswith(".XML"):
                 for event, elem in ET.iterparse(path, events=("end",)):
                     if elem.tag == 'ITEM' and elem.attrib.get('ISACTIVE') == '1':
-                        object_id = elem.attrib['OBJECTID']
-                        hierarchy_mun[object_id] = {
-                            'PARENTOBJID': elem.attrib.get('PARENTOBJID')
-                        }
+                        if 'PARENTOBJID' in elem.attrib:
+                            object_id = int(elem.attrib['OBJECTID'])
+                            parent_id = int(elem.attrib.get('PARENTOBJID'))
+                            hierarchy_mun[object_id] = {'PARENTOBJID': int(parent_id)}
                     elem.clear()
 
         batch = []
@@ -101,14 +137,12 @@ def parse_and_insert(gar_folder):
             level = int(obj['LEVEL'])
             pre = obj['TYPENAME']
 
-            if (level not in {1, 2, 3, 4, 5, 6}
-                    or (level in {1, 2} and pre not in {'г', 'г.ф.з.', 'п', 'пос'})
-                    or (pre in {'р-н', 'АО', 'г.о.', 'м.о.', 'м.р-н', 'ф.т.'})):
+            if not is_city(level, pre):
                 continue
 
             name = obj['NAME']
             fias = obj['OBJECTGUID'].replace('-', '')
-            obj_id = int(obj['OBJECTID'])
+            obj_id = obj['OBJECTID']
             kladr = (params[obj_id]['KLADR'] or '') if obj_id in params else ''
             region_id = int(region_dir)
 
@@ -120,6 +154,8 @@ def parse_and_insert(gar_folder):
             if not is_found:
                 left += 1
                 continue
+
+            post_index = find_postal(objid, addr_objects, house_postindex, tree)
 
             batch.append((
                 obj_id,
@@ -134,8 +170,7 @@ def parse_and_insert(gar_folder):
                 level,
                 0,
                 0,
-                0,
-                0
+                post_index
             ))
             count += 1
 
@@ -154,6 +189,31 @@ def prepare_typename(otype: str) -> str:
     if otype.count('.') == 1:
         otype = otype.strip('.')
     return otype
+
+
+def find_postal(objid, addr_objects, house_postindex, tree):
+    queue = deque([objid])
+    visited = set()
+    while queue:
+        current = queue.popleft()
+        if current in visited:
+            continue
+        visited.add(current)
+
+        # if addr_objects[objid]['NAME'] == 'Никель':
+        #     if objid in addr_objects and current in addr_objects:
+        #         print(addr_objects[objid]['NAME'], current, addr_objects[current]['NAME'])
+        #     else:
+        #         print(addr_objects[objid]['NAME'], current)
+        #     if current in house_postindex:
+        #         print(addr_objects[objid]['NAME'], current, '->', house_postindex[current])
+
+        if current in house_postindex:
+            return house_postindex[current]
+
+        for child in tree.get(current, []):
+            queue.append(child)
+    return ''
 
 
 def build_hierarchy(start_objid, addr_objects, hierarchy):
@@ -179,9 +239,9 @@ def build_hierarchy(start_objid, addr_objects, hierarchy):
             level = parent['LEVEL']
             name = f"{typename} {parent['NAME']}".strip(' -')
             if typename != 'г':
-                if level == '1':
+                if level == 1:
                     region = name
-                elif level in {'2', '3'} and not sub_region:
+                elif level in {2, 3} and not sub_region:
                     sub_region = name
 
         current_id = parent_id
