@@ -85,9 +85,9 @@ def parse_and_insert(gar_folder):
                         if not typeid or not value:
                             continue
                         if obj_id not in params:
-                            params[obj_id] = {'KLADR': 0}
+                            params[obj_id] = {'KLADR': ''}
                         if typeid == 10:
-                            params[obj_id]['KLADR'] = int(value)
+                            params[obj_id]['KLADR'] = value
                     elem.clear()
 
             elif file.startswith("AS_ADDR_OBJ_") and file.endswith(".XML") and "DIVISION" not in file:
